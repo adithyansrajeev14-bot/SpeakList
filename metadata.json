@@ -1,0 +1,6 @@
+{
+  "name": "SpeakList",
+  "description": "One Class. One Topic. No Confusion. Class speech topic registration with duplicate prevention and Excel export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
