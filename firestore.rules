@@ -1,59 +1,45 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper functions
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-    
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+
+    function isValidSpeechTopic(data) {
+      return data.studentName is string 
+        && data.studentName.size() > 0 
+        && data.studentName.size() <= 100
+        && data.studentNumber is string 
+        && data.studentNumber.size() > 0 
+        && data.studentNumber.size() <= 50
+        && data.topic is string 
+        && data.topic.size() > 0 
+        && data.topic.size() <= 250
+        && data.normalizedTopic is string;
     }
 
     match /speechTopics/{docId} {
-      // Read access allowed so all students can view registered topics
+      // Anyone in class can view all registered topics
       allow read: if true;
-      
-      // Authenticated user can create only with their own UID and valid data
-      allow create: if isAuthenticated() 
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.studentName is string 
-        && request.resource.data.studentName.size() > 0 
-        && request.resource.data.studentName.size() <= 100
-        && request.resource.data.topic is string 
-        && request.resource.data.topic.size() > 0 
-        && request.resource.data.topic.size() <= 250
-        && request.resource.data.normalizedTopic is string;
-        
-      // User can update only their own entry, and cannot change the userId
-      allow update: if isOwner(resource.data.userId)
-        && request.resource.data.userId == resource.data.userId
-        && request.resource.data.studentName is string 
-        && request.resource.data.studentName.size() > 0 
-        && request.resource.data.studentName.size() <= 100
-        && request.resource.data.topic is string 
-        && request.resource.data.topic.size() > 0 
-        && request.resource.data.topic.size() <= 250
-        && request.resource.data.normalizedTopic is string;
 
-      // User can delete only their own entry
-      allow delete: if isOwner(resource.data.userId);
+      // Student registers with their Name, Number, and Topic without requiring Google Sign-in
+      allow create: if isValidSpeechTopic(request.resource.data);
+
+      // Student updates their topic; validates schema
+      allow update: if isValidSpeechTopic(request.resource.data);
+
+      // Student withdraws their registered topic
+      allow delete: if true;
     }
 
     match /topicReservations/{normalizedTopic} {
       allow read: if true;
-      
-      // Can create if authenticated and matches UID
-      allow create: if isAuthenticated() 
-        && request.resource.data.userId == request.auth.uid;
-        
-      // Can update only own reservation
-      allow update: if isOwner(resource.data.userId)
-        && request.resource.data.userId == resource.data.userId;
-        
-      // Can delete only own reservation
-      allow delete: if isOwner(resource.data.userId);
+
+      allow create: if request.resource.data.studentNumber is string
+        && request.resource.data.studentName is string
+        && request.resource.data.topic is string;
+
+      allow update: if request.resource.data.studentNumber is string
+        && request.resource.data.topic is string;
+
+      allow delete: if true;
     }
   }
 }

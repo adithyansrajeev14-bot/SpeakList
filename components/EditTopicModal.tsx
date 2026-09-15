@@ -1,37 +1,50 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, AlertCircle, Loader2, Edit3, Trash2 } from 'lucide-react';
-import { SpeechTopic, normalizeTopic } from '@/lib/types';
+import { X, AlertCircle, Loader2, Edit3, Trash2, User, Hash, FileText, Bookmark, ShieldCheck } from 'lucide-react';
+import { SpeechTopic, normalizeTopic, normalizeStudentNumber } from '@/lib/types';
 
 interface EditTopicModalProps {
   isOpen: boolean;
   onClose: () => void;
   topic: SpeechTopic | null;
   existingTopics: SpeechTopic[];
+  savedStudentNumber?: string;
   onSaveTopic: (data: {
+    id: string;
     studentName: string;
+    studentNumber: string;
     topic: string;
     section?: string;
   }) => Promise<void>;
-  onDeleteTopic?: (topic: SpeechTopic) => Promise<void>;
+  onDeleteTopic?: (topic: SpeechTopic, verificationNumber?: string) => Promise<void>;
 }
 
 const EditTopicModalDialog: React.FC<Omit<EditTopicModalProps, 'isOpen'> & { topic: SpeechTopic }> = ({
   onClose,
   topic,
   existingTopics,
+  savedStudentNumber = '',
   onSaveTopic,
   onDeleteTopic,
 }) => {
   const [studentName, setStudentName] = useState(topic.studentName || '');
+  const [studentNumber, setStudentNumber] = useState(topic.studentNumber || '');
+  const [verificationInput, setVerificationInput] = useState(savedStudentNumber || '');
   const [speechTopic, setSpeechTopic] = useState(topic.topic || '');
   const [section, setSection] = useState(topic.section || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
 
-  // Real-time client duplicate check (excluding the current user's own record!)
+  // Check if ownership is pre-verified (e.g. registered on this browser)
+  const isOwnerVerified =
+    Boolean(savedStudentNumber) &&
+    normalizeStudentNumber(savedStudentNumber) === normalizeStudentNumber(topic.studentNumber || topic.userId || '');
+
+  const [isUnlocked, setIsUnlocked] = useState(isOwnerVerified);
+
+  // Real-time client duplicate check (excluding this topic's ID)
   const normalizedTyped = normalizeTopic(speechTopic);
   const matchedDuplicate =
     normalizedTyped.length > 2
@@ -40,15 +53,34 @@ const EditTopicModalDialog: React.FC<Omit<EditTopicModalProps, 'isOpen'> & { top
         )
       : null;
 
+  const handleVerifyAccess = (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    const entered = normalizeStudentNumber(verificationInput);
+    const expected = normalizeStudentNumber(topic.studentNumber || topic.userId || '');
+
+    if (entered === expected) {
+      setIsUnlocked(true);
+      setStudentNumber(topic.studentNumber || verificationInput.trim());
+    } else {
+      setFormError('The student / phone number entered does not match this registration.');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
     const trimmedName = studentName.trim();
+    const trimmedNumber = studentNumber.trim();
     const trimmedTopic = speechTopic.trim();
 
     if (!trimmedName) {
       setFormError('Please enter your full name.');
+      return;
+    }
+    if (!trimmedNumber) {
+      setFormError('Please enter your student / phone / roll number.');
       return;
     }
     if (!trimmedTopic) {
@@ -58,7 +90,7 @@ const EditTopicModalDialog: React.FC<Omit<EditTopicModalProps, 'isOpen'> & { top
 
     if (matchedDuplicate) {
       setFormError(
-        'Someone in your class has already registered this topic. Please choose another one.'
+        `This topic is already claimed by ${matchedDuplicate.studentName}. Please choose another one.`
       );
       return;
     }
@@ -66,7 +98,9 @@ const EditTopicModalDialog: React.FC<Omit<EditTopicModalProps, 'isOpen'> & { top
     setIsSubmitting(true);
     try {
       await onSaveTopic({
+        id: topic.id,
         studentName: trimmedName,
+        studentNumber: trimmedNumber,
         topic: trimmedTopic,
         section: section.trim() || undefined,
       });
@@ -83,7 +117,7 @@ const EditTopicModalDialog: React.FC<Omit<EditTopicModalProps, 'isOpen'> & { top
     if (!onDeleteTopic) return;
     setIsSubmitting(true);
     try {
-      await onDeleteTopic(topic);
+      await onDeleteTopic(topic, studentNumber || verificationInput);
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to remove topic.';
@@ -110,10 +144,10 @@ const EditTopicModalDialog: React.FC<Omit<EditTopicModalProps, 'isOpen'> & { top
             </div>
             <div>
               <h3 className="text-lg font-bold text-zinc-900 dark:text-white">
-                Edit Your Speech Topic
+                Manage Speech Topic
               </h3>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                You can change your registered name or switch your topic anytime
+                Update your presentation topic or details anytime
               </p>
             </div>
           </div>
@@ -127,169 +161,264 @@ const EditTopicModalDialog: React.FC<Omit<EditTopicModalProps, 'isOpen'> & { top
           </button>
         </div>
 
-        {/* Delete confirmation banner */}
-        {isConfirmingDelete ? (
-          <div className="p-6 bg-rose-50/70 dark:bg-rose-950/40 border-b border-rose-200 dark:border-rose-900/60">
-            <h4 className="text-sm font-bold text-rose-900 dark:text-rose-200 mb-1">
-              Withdraw this speech topic?
-            </h4>
-            <p className="text-xs text-rose-700 dark:text-rose-300 mb-4 leading-relaxed">
-              This will free up &ldquo;{topic.topic}&rdquo; so another student can register it.
-            </p>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={handleDelete}
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white transition active:scale-95"
+        {/* Access Verification Gate if opening on another browser/device */}
+        {!isUnlocked ? (
+          <form onSubmit={handleVerifyAccess} className="p-6 space-y-4">
+            <div className="p-4 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/80 flex items-start gap-3">
+              <ShieldCheck className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-xs font-bold text-indigo-950 dark:text-indigo-200">
+                  Student Verification Required
+                </h4>
+                <p className="text-xs text-indigo-800/80 dark:text-indigo-300/90 mt-0.5 leading-relaxed">
+                  To protect your topic from unauthorized changes, please enter the student number or phone number you registered with for <strong>{topic.studentName}</strong>.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="verify-number-input"
+                className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5"
               >
-                {isSubmitting ? 'Withdrawing...' : 'Yes, Withdraw Topic'}
-              </button>
+                Enter Registered Student / Phone Number
+              </label>
+              <input
+                id="verify-number-input"
+                type="text"
+                required
+                value={verificationInput}
+                onChange={(e) => setVerificationInput(e.target.value)}
+                placeholder="e.g. 9876543210 or CS-2024-042"
+                className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            {formError && (
+              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200 text-xs flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <span>{formError}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setIsConfirmingDelete(false)}
-                className="px-4 py-2 rounded-xl text-xs font-medium border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-800 transition"
+                onClick={onClose}
+                className="px-4 py-2 text-xs font-medium rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
               >
                 Cancel
               </button>
-            </div>
-          </div>
-        ) : null}
-
-        {/* Edit Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Full Name */}
-          <div>
-            <label
-              htmlFor="edit-student-name"
-              className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5"
-            >
-              Full Name <span className="text-rose-500">*</span>
-            </label>
-            <input
-              id="edit-student-name"
-              type="text"
-              required
-              value={studentName}
-              onChange={(e) => setStudentName(e.target.value)}
-              placeholder="Enter your full name"
-              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition"
-            />
-          </div>
-
-          {/* Speech Topic */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label
-                htmlFor="edit-speech-topic"
-                className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300"
+              <button
+                type="submit"
+                className="px-5 py-2 text-xs font-semibold rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition"
               >
-                Speech Topic <span className="text-rose-500">*</span>
-              </label>
-              <span className="text-[11px] text-zinc-400">
-                Old topic will be freed up if changed
-              </span>
+                Verify & Unlock
+              </button>
             </div>
-            <textarea
-              id="edit-speech-topic"
-              required
-              rows={3}
-              value={speechTopic}
-              onChange={(e) => setSpeechTopic(e.target.value)}
-              placeholder="Enter your speech presentation topic"
-              className={`w-full px-3.5 py-2.5 text-sm rounded-xl border ${
-                matchedDuplicate
-                  ? 'border-rose-400 dark:border-rose-600 focus:ring-rose-500/50'
-                  : 'border-zinc-300 dark:border-zinc-700 focus:ring-indigo-500/50 focus:border-indigo-500'
-              } bg-white dark:bg-zinc-800/80 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-hidden focus:ring-2 transition resize-none`}
-            />
-
-            {/* Instant Duplicate Warning */}
-            {matchedDuplicate && (
-              <div className="mt-2 p-3 rounded-lg bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900/60 flex items-start gap-2.5 animate-in fade-in">
-                <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-                <div>
-                  <h5 className="text-xs font-bold text-rose-900 dark:text-rose-200">
-                    Topic already taken
-                  </h5>
-                  <p className="text-xs text-rose-700 dark:text-rose-300 mt-0.5">
-                    Someone in your class has already registered this topic ({matchedDuplicate.studentName}). Please choose another one.
-                  </p>
+          </form>
+        ) : (
+          <>
+            {/* Delete confirmation banner */}
+            {isConfirmingDelete && (
+              <div className="p-6 bg-rose-50/70 dark:bg-rose-950/40 border-b border-rose-200 dark:border-rose-900/60">
+                <h4 className="text-sm font-bold text-rose-900 dark:text-rose-200 mb-1">
+                  Withdraw this speech topic?
+                </h4>
+                <p className="text-xs text-rose-700 dark:text-rose-300 mb-4 leading-relaxed">
+                  This will release &ldquo;{topic.topic}&rdquo; back into the pool so other students can register it.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={handleDelete}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white transition active:scale-95"
+                  >
+                    {isSubmitting ? 'Withdrawing...' : 'Yes, Withdraw Topic'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsConfirmingDelete(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-medium border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-800 transition"
+                  >
+                    Cancel
+                  </button>
                 </div>
               </div>
             )}
-          </div>
 
-          {/* Optional Class / Section */}
-          <div>
-            <label
-              htmlFor="edit-section"
-              className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5"
-            >
-              Class / Section <span className="text-xs font-normal text-zinc-400">(Optional)</span>
-            </label>
-            <input
-              id="edit-section"
-              type="text"
-              value={section}
-              onChange={(e) => setSection(e.target.value)}
-              placeholder="e.g. Section A, Period 3, or Comm 101"
-              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition"
-            />
-          </div>
+            {/* Edit Form */}
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              {/* Full Name */}
+              <div>
+                <label
+                  htmlFor="edit-student-name"
+                  className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-zinc-400" />
+                    <span>Student Full Name</span>
+                    <span className="text-rose-500">*</span>
+                  </span>
+                </label>
+                <input
+                  id="edit-student-name"
+                  type="text"
+                  required
+                  value={studentName}
+                  onChange={(e) => setStudentName(e.target.value)}
+                  placeholder="Enter your full name"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition"
+                />
+              </div>
 
-          {/* Form Error */}
-          {formError && (
-            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200 text-xs flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-              <span>{formError}</span>
-            </div>
-          )}
+              {/* Student Number */}
+              <div>
+                <label
+                  htmlFor="edit-student-number"
+                  className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Hash className="w-3.5 h-3.5 text-zinc-400" />
+                    <span>Student Number / Phone Number</span>
+                    <span className="text-rose-500">*</span>
+                  </span>
+                </label>
+                <input
+                  id="edit-student-number"
+                  type="text"
+                  required
+                  value={studentNumber}
+                  onChange={(e) => setStudentNumber(e.target.value)}
+                  placeholder="e.g. 9876543210 or CS-2024-042"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition"
+                />
+              </div>
 
-          {/* Modal Footer */}
-          <div className="flex items-center justify-between gap-2.5 pt-4 border-t border-zinc-100 dark:border-zinc-800">
-            {onDeleteTopic && !isConfirmingDelete ? (
-              <button
-                id="withdraw-topic-btn"
-                type="button"
-                onClick={() => setIsConfirmingDelete(true)}
-                className="inline-flex items-center gap-1.5 text-xs text-rose-600 hover:text-rose-700 dark:text-rose-400 hover:underline"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Withdraw Topic
-              </button>
-            ) : (
-              <div />
-            )}
+              {/* Speech Topic */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label
+                    htmlFor="edit-speech-topic"
+                    className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-zinc-400" />
+                      <span>Speech Topic</span>
+                      <span className="text-rose-500">*</span>
+                    </span>
+                  </label>
+                  <span className="text-[11px] text-zinc-400">
+                    Old topic will be freed if changed
+                  </span>
+                </div>
+                <textarea
+                  id="edit-speech-topic"
+                  required
+                  rows={3}
+                  value={speechTopic}
+                  onChange={(e) => setSpeechTopic(e.target.value)}
+                  placeholder="Enter your presentation topic"
+                  className={`w-full px-3.5 py-2.5 text-sm rounded-xl border ${
+                    matchedDuplicate
+                      ? 'border-rose-400 dark:border-rose-600 focus:ring-rose-500/50'
+                      : 'border-zinc-300 dark:border-zinc-700 focus:ring-indigo-500/50 focus:border-indigo-500'
+                  } bg-white dark:bg-zinc-800/80 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-hidden focus:ring-2 transition resize-none`}
+                />
 
-            <div className="flex items-center gap-2">
-              <button
-                id="cancel-edit-topic-btn"
-                type="button"
-                disabled={isSubmitting}
-                onClick={onClose}
-                className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-medium border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
-              >
-                Cancel
-              </button>
-              <button
-                id="submit-save-topic-btn"
-                type="submit"
-                disabled={isSubmitting || Boolean(matchedDuplicate)}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition active:scale-98"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Saving...</span>
-                  </>
-                ) : (
-                  <span>Save Changes</span>
+                {/* Instant Duplicate Warning */}
+                {matchedDuplicate && (
+                  <div className="mt-2 p-3 rounded-lg bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900/60 flex items-start gap-2.5 animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                    <div>
+                      <h5 className="text-xs font-bold text-rose-900 dark:text-rose-200">
+                        Topic already claimed
+                      </h5>
+                      <p className="text-xs text-rose-700 dark:text-rose-300 mt-0.5">
+                        Someone in your class has already registered this topic ({matchedDuplicate.studentName}). Please choose another one.
+                      </p>
+                    </div>
+                  </div>
                 )}
-              </button>
-            </div>
-          </div>
-        </form>
+              </div>
+
+              {/* Optional Class / Section */}
+              <div>
+                <label
+                  htmlFor="edit-section"
+                  className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Bookmark className="w-3.5 h-3.5 text-zinc-400" />
+                    <span>Class / Section</span>
+                    <span className="text-xs font-normal text-zinc-400">(Optional)</span>
+                  </span>
+                </label>
+                <input
+                  id="edit-section"
+                  type="text"
+                  value={section}
+                  onChange={(e) => setSection(e.target.value)}
+                  placeholder="e.g. Section A, Period 3, or Comm 101"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition"
+                />
+              </div>
+
+              {/* Form Error */}
+              {formError && (
+                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200 text-xs flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-between gap-2.5 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                {onDeleteTopic && !isConfirmingDelete ? (
+                  <button
+                    id="withdraw-topic-btn"
+                    type="button"
+                    onClick={() => setIsConfirmingDelete(true)}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-600 hover:text-rose-700 dark:text-rose-400 hover:underline"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Withdraw Topic
+                  </button>
+                ) : (
+                  <div />
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    id="cancel-edit-topic-btn"
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={onClose}
+                    className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-medium border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    id="submit-save-topic-btn"
+                    type="submit"
+                    disabled={isSubmitting || Boolean(matchedDuplicate)}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition active:scale-98"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <span>Save Changes</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </>
+        )}
       </div>
     </div>
   );

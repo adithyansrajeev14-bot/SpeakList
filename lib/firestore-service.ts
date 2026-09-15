@@ -7,12 +7,10 @@ import {
   runTransaction,
   serverTimestamp,
   getDoc,
-  where,
-  getDocs,
   deleteDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { SpeechTopic, normalizeTopic } from './types';
+import { SpeechTopic, normalizeTopic, normalizeStudentNumber } from './types';
 
 const SPEECH_TOPICS_COLLECTION = 'speechTopics';
 const TOPIC_RESERVATIONS_COLLECTION = 'topicReservations';
@@ -36,10 +34,12 @@ export function subscribeToSpeechTopics(
         const topics: SpeechTopic[] = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data();
+          const studentNum = data.studentNumber || data.userId || '';
           topics.push({
             id: docSnap.id,
-            userId: data.userId || docSnap.id,
+            userId: studentNum,
             studentName: data.studentName || 'Anonymous Student',
+            studentNumber: studentNum,
             studentEmail: data.studentEmail || '',
             studentPhotoURL: data.studentPhotoURL || '',
             topic: data.topic || '',
@@ -62,10 +62,12 @@ export function subscribeToSpeechTopics(
               const fallbackTopics: SpeechTopic[] = [];
               fallbackSnap.forEach((docSnap) => {
                 const data = docSnap.data();
+                const studentNum = data.studentNumber || data.userId || '';
                 fallbackTopics.push({
                   id: docSnap.id,
-                  userId: data.userId || docSnap.id,
+                  userId: studentNum,
                   studentName: data.studentName || 'Anonymous Student',
+                  studentNumber: studentNum,
                   studentEmail: data.studentEmail || '',
                   studentPhotoURL: data.studentPhotoURL || '',
                   topic: data.topic || '',
@@ -77,8 +79,8 @@ export function subscribeToSpeechTopics(
               });
               onUpdate(fallbackTopics);
             },
-            (fallbackErr) => {
-              onError(new Error('Unable to connect to the class topic board. Please check your internet or Firebase connection.'));
+            () => {
+              onError(new Error('Unable to connect to the class topic board. Please check your connection.'));
             }
           );
         } catch {
@@ -93,96 +95,115 @@ export function subscribeToSpeechTopics(
 }
 
 /**
- * Registers a new speech presentation topic.
- * Uses atomic transaction to ensure no duplicates and 1 topic per student account.
+ * Registers a new speech presentation topic with Student Name & Number.
+ * Uses atomic transaction to guarantee:
+ * 1. Exactly 1 topic per student number
+ * 2. Absolute uniqueness across the class (no two students can choose the same topic)
  */
 export async function registerSpeechTopic(params: {
-  userId: string;
   studentName: string;
-  studentEmail: string;
-  studentPhotoURL?: string;
+  studentNumber: string;
   topic: string;
   section?: string;
-}): Promise<void> {
-  const { userId, studentName, studentEmail, studentPhotoURL, topic, section } = params;
+}): Promise<string> {
+  const { studentName, studentNumber, topic, section } = params;
 
   const trimmedName = studentName.trim();
+  const trimmedNumber = studentNumber.trim();
   const trimmedTopic = topic.trim();
 
   if (!trimmedName) {
     throw new Error('Please enter your full name.');
   }
+  if (!trimmedNumber) {
+    throw new Error('Please enter your student / phone / roll number.');
+  }
   if (!trimmedTopic) {
     throw new Error('Please enter your speech presentation topic.');
   }
 
-  const normalized = normalizeTopic(trimmedTopic);
-  const userTopicRef = doc(db, SPEECH_TOPICS_COLLECTION, userId);
-  const reservationRef = doc(db, TOPIC_RESERVATIONS_COLLECTION, encodeURIComponent(normalized));
+  const normalizedNum = normalizeStudentNumber(trimmedNumber);
+  const normalizedTopicText = normalizeTopic(trimmedTopic);
+
+  // Document ID derived from normalized student number (safely encoded)
+  const docId = encodeURIComponent(normalizedNum);
+  const userTopicRef = doc(db, SPEECH_TOPICS_COLLECTION, docId);
+  const reservationRef = doc(db, TOPIC_RESERVATIONS_COLLECTION, encodeURIComponent(normalizedTopicText));
 
   await runTransaction(db, async (transaction) => {
-    // 1. Check if this student already registered a topic
+    // 1. Check if this student number already registered a topic
     const existingUserDoc = await transaction.get(userTopicRef);
     if (existingUserDoc.exists()) {
       throw new Error(
-        'You have already registered a topic. You can edit your registered topic directly on the board.'
+        `A presentation topic has already been registered for number "${trimmedNumber}". You can find your topic on the board and edit it.`
       );
     }
 
-    // 2. Check if the topic is already reserved
+    // 2. Check if this speech topic is already reserved
     const existingReservation = await transaction.get(reservationRef);
     if (existingReservation.exists()) {
+      const resData = existingReservation.data();
+      const resOwner = resData?.studentName ? ` by ${resData.studentName}` : '';
       throw new Error(
-        'Someone in your class has already registered this topic. Please choose another one.'
+        `This topic has already been registered${resOwner}. Please choose another topic.`
       );
     }
 
-    // 3. Perform atomic reservation and document creation
+    // 3. Atomically create topic reservation & student topic document
     transaction.set(reservationRef, {
-      userId,
-      topic: trimmedTopic,
+      studentNumber: trimmedNumber,
+      normalizedNumber: normalizedNum,
       studentName: trimmedName,
+      topic: trimmedTopic,
       createdAt: serverTimestamp(),
     });
 
     transaction.set(userTopicRef, {
-      userId,
       studentName: trimmedName,
-      studentEmail: studentEmail || '',
-      studentPhotoURL: studentPhotoURL || '',
+      studentNumber: trimmedNumber,
+      normalizedNumber: normalizedNum,
+      userId: normalizedNum,
       topic: trimmedTopic,
-      normalizedTopic: normalized,
+      normalizedTopic: normalizedTopicText,
       section: section ? section.trim() : '',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
   });
+
+  return normalizedNum;
 }
 
 /**
- * Updates an existing speech topic registered by the user.
- * Revalidates uniqueness and releases old reservation if topic changed.
+ * Updates an existing speech topic registered by the student.
+ * Verifies topic uniqueness and releases old topic reservation if changed.
  */
 export async function updateSpeechTopic(params: {
-  userId: string;
+  id: string;
   studentName: string;
+  studentNumber: string;
   topic: string;
   section?: string;
 }): Promise<void> {
-  const { userId, studentName, topic, section } = params;
+  const { id, studentName, studentNumber, topic, section } = params;
 
   const trimmedName = studentName.trim();
+  const trimmedNumber = studentNumber.trim();
   const trimmedTopic = topic.trim();
 
   if (!trimmedName) {
     throw new Error('Please enter your full name.');
   }
+  if (!trimmedNumber) {
+    throw new Error('Please enter your student / phone / roll number.');
+  }
   if (!trimmedTopic) {
     throw new Error('Please enter your speech presentation topic.');
   }
 
-  const newNormalized = normalizeTopic(trimmedTopic);
-  const userTopicRef = doc(db, SPEECH_TOPICS_COLLECTION, userId);
+  const normalizedNum = normalizeStudentNumber(trimmedNumber);
+  const newNormalizedTopic = normalizeTopic(trimmedTopic);
+  const userTopicRef = doc(db, SPEECH_TOPICS_COLLECTION, id);
 
   await runTransaction(db, async (transaction) => {
     const userDoc = await transaction.get(userTopicRef);
@@ -191,40 +212,57 @@ export async function updateSpeechTopic(params: {
     }
 
     const currentData = userDoc.data();
-    if (currentData.userId !== userId) {
-      throw new Error('Unauthorized: You can only edit your own registered topic.');
+    const docStudentNum = normalizeStudentNumber(currentData.studentNumber || currentData.userId || '');
+
+    // Verify ownership via student number
+    if (docStudentNum && docStudentNum !== normalizedNum) {
+      throw new Error('Verification failed: The student / phone number does not match this registration.');
     }
 
-    const oldNormalized = currentData.normalizedTopic || normalizeTopic(currentData.topic || '');
-    const topicHasChanged = oldNormalized !== newNormalized;
+    const oldNormalizedTopic = currentData.normalizedTopic || normalizeTopic(currentData.topic || '');
+    const topicHasChanged = oldNormalizedTopic !== newNormalizedTopic;
 
     if (topicHasChanged) {
-      const newReservationRef = doc(db, TOPIC_RESERVATIONS_COLLECTION, encodeURIComponent(newNormalized));
+      const newReservationRef = doc(
+        db,
+        TOPIC_RESERVATIONS_COLLECTION,
+        encodeURIComponent(newNormalizedTopic)
+      );
       const newReservationDoc = await transaction.get(newReservationRef);
-      if (newReservationDoc.exists() && newReservationDoc.data().userId !== userId) {
+      if (
+        newReservationDoc.exists() &&
+        normalizeStudentNumber(newReservationDoc.data().studentNumber || '') !== normalizedNum
+      ) {
         throw new Error(
           'Someone in your class has already registered this topic. Please choose another one.'
         );
       }
 
       // Release old reservation
-      const oldReservationRef = doc(db, TOPIC_RESERVATIONS_COLLECTION, encodeURIComponent(oldNormalized));
+      const oldReservationRef = doc(
+        db,
+        TOPIC_RESERVATIONS_COLLECTION,
+        encodeURIComponent(oldNormalizedTopic)
+      );
       transaction.delete(oldReservationRef);
 
       // Claim new reservation
       transaction.set(newReservationRef, {
-        userId,
-        topic: trimmedTopic,
+        studentNumber: trimmedNumber,
+        normalizedNumber: normalizedNum,
         studentName: trimmedName,
+        topic: trimmedTopic,
         createdAt: serverTimestamp(),
       });
     }
 
-    // Update student topic document
+    // Update speech topic record
     transaction.update(userTopicRef, {
       studentName: trimmedName,
+      studentNumber: trimmedNumber,
+      normalizedNumber: normalizedNum,
       topic: trimmedTopic,
-      normalizedTopic: newNormalized,
+      normalizedTopic: newNormalizedTopic,
       section: section ? section.trim() : '',
       updatedAt: serverTimestamp(),
     });
@@ -232,25 +270,35 @@ export async function updateSpeechTopic(params: {
 }
 
 /**
- * Deletes a student's own registration and frees the topic.
+ * Deletes a student's own registration and frees the topic for others.
  */
-export async function deleteSpeechTopic(userId: string): Promise<void> {
-  const userTopicRef = doc(db, SPEECH_TOPICS_COLLECTION, userId);
+export async function deleteSpeechTopic(id: string, verificationNumber?: string): Promise<void> {
+  const userTopicRef = doc(db, SPEECH_TOPICS_COLLECTION, id);
   const userDoc = await getDoc(userTopicRef);
   if (!userDoc.exists()) return;
 
   const data = userDoc.data();
-  if (data.userId !== userId) {
-    throw new Error('Unauthorized: You can only remove your own topic.');
+
+  // If verification number is provided, verify it matches
+  if (verificationNumber) {
+    const docStudentNum = normalizeStudentNumber(data.studentNumber || data.userId || '');
+    const verifyNum = normalizeStudentNumber(verificationNumber);
+    if (docStudentNum && docStudentNum !== verifyNum) {
+      throw new Error('Verification failed: The student / phone number does not match this registration.');
+    }
   }
 
-  const normalized = data.normalizedTopic || normalizeTopic(data.topic || '');
-  const reservationRef = doc(db, TOPIC_RESERVATIONS_COLLECTION, encodeURIComponent(normalized));
+  const normalizedTopicText = data.normalizedTopic || normalizeTopic(data.topic || '');
+  const reservationRef = doc(
+    db,
+    TOPIC_RESERVATIONS_COLLECTION,
+    encodeURIComponent(normalizedTopicText)
+  );
 
   await deleteDoc(userTopicRef);
   try {
     await deleteDoc(reservationRef);
   } catch {
-    // Reservation might have already been removed
+    // Reservation might have already been released
   }
 }

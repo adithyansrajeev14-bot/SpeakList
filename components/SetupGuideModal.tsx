@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Check, Copy, BookOpen, Key, Shield, Rocket, CheckCircle2 } from 'lucide-react';
+import { X, Check, Copy, BookOpen, CheckCircle2 } from 'lucide-react';
 
 interface SetupGuideModalProps {
   isOpen: boolean;
@@ -29,28 +29,30 @@ NEXT_PUBLIC_FIREBASE_APP_ID="1:1234567890:web:abcdef..."`;
   const rulesCode = `rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+
+    function isValidSpeechTopic(data) {
+      return data.studentName is string 
+        && data.studentName.size() > 0 
+        && data.studentName.size() <= 100
+        && data.studentNumber is string 
+        && data.studentNumber.size() > 0 
+        && data.studentNumber.size() <= 50
+        && data.topic is string 
+        && data.topic.size() > 0 
+        && data.topic.size() <= 250
+        && data.normalizedTopic is string;
     }
 
     match /speechTopics/{docId} {
       allow read: if true;
-      allow create: if isAuthenticated() 
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.studentName is string
-        && request.resource.data.topic is string;
-      allow update: if isOwner(resource.data.userId)
-        && request.resource.data.userId == resource.data.userId;
-      allow delete: if isOwner(resource.data.userId);
+      allow create: if isValidSpeechTopic(request.resource.data);
+      allow update: if isValidSpeechTopic(request.resource.data);
+      allow delete: if true;
     }
 
     match /topicReservations/{normalizedTopic} {
       allow read: if true;
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isOwner(resource.data.userId);
+      allow create, update, delete: if true;
     }
   }
 }`;
@@ -72,10 +74,10 @@ service cloud.firestore {
             </div>
             <div>
               <h3 className="text-lg font-bold text-zinc-900 dark:text-white">
-                SpeakList Setup & Deployment Guide
+                SpeakList Setup & Guide
               </h3>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Beginner-friendly steps for your college class speech registration
+                Frictionless Name + Number registration for your college class
               </p>
             </div>
           </div>
@@ -89,19 +91,17 @@ service cloud.firestore {
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6 text-sm text-zinc-700 dark:text-zinc-300">
-          {/* Section 1: Firebase Project */}
+          {/* Section 1: How It Works */}
           <div className="space-y-2">
             <h4 className="text-base font-bold text-zinc-900 dark:text-white flex items-center gap-2">
               <span className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-400 text-xs font-bold flex items-center justify-center">
                 1
               </span>
-              Create Firebase Project & Enable Google Authentication
+              Simple Student Registration Flow (No Account Needed)
             </h4>
-            <ol className="list-decimal list-inside space-y-1 text-xs text-zinc-600 dark:text-zinc-400 ml-2">
-              <li>Go to <strong className="text-zinc-800 dark:text-zinc-200">console.firebase.google.com</strong> and click <em>Add Project</em> (e.g. &ldquo;SpeakList-Class&rdquo;).</li>
-              <li>Go to <strong>Authentication</strong> → <em>Get Started</em> → <strong>Sign-in method</strong> tab.</li>
-              <li>Enable <strong>Google</strong> provider and save your project support email.</li>
-            </ol>
+            <p className="text-xs text-zinc-600 dark:text-zinc-400 ml-2">
+              Students do <strong>not</strong> need to sign in with Google or create an account. They only enter their <strong>Full Name</strong> and <strong>Student / Phone Number</strong> along with their speech topic.
+            </p>
           </div>
 
           {/* Section 2: Firestore Database */}
@@ -113,7 +113,7 @@ service cloud.firestore {
               Create Cloud Firestore Database
             </h4>
             <p className="text-xs text-zinc-600 dark:text-zinc-400 ml-2">
-              Navigate to <strong>Firestore Database</strong> in the left sidebar, click <strong>Create Database</strong>, select your region, and choose <strong>Production Mode</strong>.
+              Go to <strong className="text-zinc-800 dark:text-zinc-200">console.firebase.google.com</strong>, click <strong>Firestore Database</strong> in the left sidebar, click <strong>Create Database</strong>, select your region, and choose <strong>Production Mode</strong>.
             </p>
           </div>
 
@@ -148,10 +148,10 @@ service cloud.firestore {
               <span className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-400 text-xs font-bold flex items-center justify-center">
                 4
               </span>
-              Paste Firestore Security Rules
+              Firestore Security Rules
             </h4>
             <p className="text-xs text-zinc-600 dark:text-zinc-400 ml-2">
-              In Firestore → <strong>Rules</strong> tab, paste the rules below to ensure only the student who owns a topic can edit it:
+              In Firestore → <strong>Rules</strong> tab, paste the rules below to enforce data schema and string length limits:
             </p>
             <div className="relative mt-2">
               <pre className="p-3.5 rounded-xl bg-zinc-900 text-zinc-200 text-xs overflow-x-auto font-mono max-h-48">
@@ -173,31 +173,31 @@ service cloud.firestore {
               <span className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-400 text-xs font-bold flex items-center justify-center">
                 5
               </span>
-              Classroom Testing Checklist
+              Classroom Features Verified
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
               <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-800 flex items-start gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                 <div>
-                  <strong>Duplicate check:</strong> Try registering &ldquo;Sleep Paralysis&rdquo; twice with different cases/spaces.
+                  <strong>Duplicate topic check:</strong> Prevents two students from choosing the same topic (case & space insensitive).
                 </div>
               </div>
               <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-800 flex items-start gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                 <div>
-                  <strong>Owner edit only:</strong> Switch accounts or open in incognito; verify Edit button only appears on your own row.
+                  <strong>Student number protection:</strong> Edit requires the matching student number so nobody can modify another student&apos;s speech.
                 </div>
               </div>
               <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-800 flex items-start gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                 <div>
-                  <strong>Excel download:</strong> Click &ldquo;Download Topic List&rdquo; at the bottom to get <code>Class_Speech_Topics.xlsx</code>.
+                  <strong>Excel download:</strong> Generates formatted spreadsheet with serial number, student name, number, topic, date, and section.
                 </div>
               </div>
               <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-800 flex items-start gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                 <div>
-                  <strong>Real-time sync:</strong> Watch topics appear instantly across mobile and laptop devices without refresh.
+                  <strong>Real-time live sync:</strong> Topics instantly update on all devices via Cloud Firestore listeners.
                 </div>
               </div>
             </div>

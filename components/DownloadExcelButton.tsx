@@ -34,15 +34,11 @@ export const DownloadExcelButton: React.FC<DownloadExcelButtonProps> = ({
         a.studentName.localeCompare(b.studentName, undefined, { sensitivity: 'base' })
       );
 
-      // Create data rows with requested columns:
-      // 1. Sl. No.
-      // 2. Student Name
-      // 3. Speech Topic
-      // 4. Registration Date
-      // 5. Class / Section (bonus if present)
+      // Create data rows with requested columns including student number
       const data = sortedTopics.map((item, index) => ({
         'Sl. No.': index + 1,
         'Student Name': item.studentName,
+        'Student / Phone Number': item.studentNumber || '—',
         'Speech Topic': item.topic,
         'Registration Date': formatTopicDate(item.createdAt),
         'Class / Section': item.section || '—',
@@ -55,7 +51,8 @@ export const DownloadExcelButton: React.FC<DownloadExcelButtonProps> = ({
       worksheet['!cols'] = [
         { wch: 10 }, // Sl. No.
         { wch: 28 }, // Student Name
-        { wch: 42 }, // Speech Topic
+        { wch: 24 }, // Student / Phone Number
+        { wch: 44 }, // Speech Topic
         { wch: 24 }, // Registration Date
         { wch: 18 }, // Class / Section
       ];
@@ -102,7 +99,7 @@ export const DownloadExcelButton: React.FC<DownloadExcelButtonProps> = ({
             Download Topic List
           </h3>
           <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 mt-1">
-            Export the latest class speech topics as an Excel file.
+            Export the complete class speech presentation schedule directly to an Excel sheet.
           </p>
         </div>
 

@@ -1,14 +1,14 @@
 'use client';
 
 import React from 'react';
-import { SpeechTopic } from '@/lib/types';
+import { SpeechTopic, normalizeStudentNumber } from '@/lib/types';
 import { TopicRow } from './TopicRow';
 import { MicOff, Plus, User, FileText } from 'lucide-react';
 
 interface TopicBoardProps {
   topics: SpeechTopic[];
   loading: boolean;
-  currentUserId: string | null;
+  currentStudentNumber: string | null;
   onEditTopic: (topic: SpeechTopic) => void;
   onDeleteTopic: (topic: SpeechTopic) => void;
   onOpenAddModal: () => void;
@@ -18,26 +18,30 @@ interface TopicBoardProps {
 export const TopicBoard: React.FC<TopicBoardProps> = ({
   topics,
   loading,
-  currentUserId,
+  currentStudentNumber,
   onEditTopic,
   onDeleteTopic,
   onOpenAddModal,
   searchQuery,
 }) => {
+  const normalizedCurrent = currentStudentNumber
+    ? normalizeStudentNumber(currentStudentNumber)
+    : null;
+
   return (
     <section id="topic-board-section" className="mb-10">
       {/* Table / Board Wrapper */}
       <div className="rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs overflow-hidden">
-        {/* DESKTOP 2-COLUMN HEADER (Strictly adhering to requirement 4) */}
+        {/* DESKTOP 2-COLUMN HEADER */}
         <div className="hidden md:grid md:grid-cols-12 gap-6 px-5 py-3.5 bg-zinc-50 dark:bg-zinc-800/60 border-b border-zinc-200 dark:border-zinc-800 text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
           <div className="md:col-span-5 flex items-center gap-2">
             <User className="w-3.5 h-3.5 text-zinc-400" />
-            <span>Student Name</span>
+            <span>Student Name & Number</span>
           </div>
           <div className="md:col-span-7 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <FileText className="w-3.5 h-3.5 text-zinc-400" />
-              <span>Speech Topic</span>
+              <span>Speech Presentation Topic</span>
             </div>
             <span className="text-[11px] font-normal text-zinc-400 lowercase">
               status & actions
@@ -69,16 +73,21 @@ export const TopicBoard: React.FC<TopicBoardProps> = ({
         {/* TOPIC ROWS LIST */}
         {!loading && topics.length > 0 && (
           <div id="topics-list-container" className="p-3 sm:p-4 space-y-2.5">
-            {topics.map((topic, index) => (
-              <TopicRow
-                key={topic.id}
-                topic={topic}
-                index={index}
-                isOwner={Boolean(currentUserId && topic.userId === currentUserId)}
-                onEdit={onEditTopic}
-                onDelete={onDeleteTopic}
-              />
-            ))}
+            {topics.map((topic, index) => {
+              const rowNormalized = normalizeStudentNumber(topic.studentNumber || topic.userId || '');
+              const isOwner = Boolean(normalizedCurrent && rowNormalized === normalizedCurrent);
+
+              return (
+                <TopicRow
+                  key={topic.id}
+                  topic={topic}
+                  index={index}
+                  isOwner={isOwner}
+                  onEdit={onEditTopic}
+                  onDelete={onDeleteTopic}
+                />
+              );
+            })}
           </div>
         )}
 

@@ -2,15 +2,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  onAuthStateChanged,
-  signInWithPopup,
-  signInAnonymously,
-  updateProfile,
-  signOut,
-  User,
-} from 'firebase/auth';
-import { auth, googleProvider } from '@/lib/firebase';
-import {
   subscribeToSpeechTopics,
   registerSpeechTopic,
   updateSpeechTopic,
@@ -21,7 +12,7 @@ import {
   FilterOption,
   SortOption,
   ToastMessage,
-  normalizeTopic,
+  normalizeStudentNumber,
   getTimestampMillis,
 } from '@/lib/types';
 import { Header } from '@/components/Header';
@@ -35,11 +26,37 @@ import { DownloadExcelButton } from '@/components/DownloadExcelButton';
 import { SetupGuideModal } from '@/components/SetupGuideModal';
 import { ToastNotification } from '@/components/ToastNotification';
 
+const STORAGE_STUDENT_NUMBER_KEY = 'speaklist_student_number';
+const STORAGE_STUDENT_NAME_KEY = 'speaklist_student_name';
+
 export default function SpeakListPage() {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [topics, setTopics] = useState<SpeechTopic[]>([]);
   const [loading, setLoading] = useState(true);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+
+  // Client-saved student identity (Name + Number) stored locally on the device
+  const [savedStudentNumber, setSavedStudentNumber] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem(STORAGE_STUDENT_NUMBER_KEY) || '';
+    }
+    return '';
+  });
+  const [savedStudentName, setSavedStudentName] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem(STORAGE_STUDENT_NAME_KEY) || '';
+    }
+    return '';
+  });
+
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('speaklist-theme');
+      if (saved === 'dark' || saved === 'light') return saved;
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light';
+    }
+    return 'light';
+  });
 
   // Search, Filter & Sort state
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,18 +87,14 @@ export default function SpeakListPage() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Theme initialization & sync
+  // Sync DOM dark class when theme changes
   useEffect(() => {
-    const savedTheme = localStorage.getItem('speaklist-theme');
-    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const shouldBeDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
-
-    if (shouldBeDark) {
+    if (theme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
-  }, []);
+  }, [theme]);
 
   const toggleTheme = () => {
     setTheme((prev) => {
@@ -96,15 +109,7 @@ export default function SpeakListPage() {
     });
   };
 
-  // Firebase Auth listener
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Firebase Firestore real-time listener
+  // Firebase Firestore real-time subscription
   useEffect(() => {
     const unsubscribe = subscribeToSpeechTopics(
       (updatedTopics) => {
@@ -116,103 +121,69 @@ export default function SpeakListPage() {
         setLoading(false);
         showToast(
           'error',
-          'Live sync issue',
-          'Could not sync latest topics. Please check your network connection.'
+          'Live sync notice',
+          'Could not connect to live class topics. Retrying automatically...'
         );
       }
     );
     return () => unsubscribe();
   }, [showToast]);
 
-  // Auth operations
-  const handleSignInWithGoogle = async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-      showToast('success', 'Signed In with Google', 'You can now register or manage your speech topic.');
-    } catch (err: unknown) {
-      console.warn('Google sign-in popup error/blocked:', err);
-      showToast(
-        'info',
-        'Google Sign-In Popup Notice',
-        'If popups are blocked by your browser or inside this preview, use the Student ID icon next to Sign In to continue quickly.'
-      );
-    }
-  };
-
-  const handleQuickStudentSignIn = async (name: string, email: string) => {
-    try {
-      const userCredential = await signInAnonymously(auth);
-      if (userCredential.user) {
-        await updateProfile(userCredential.user, {
-          displayName: name,
-        });
-        setCurrentUser({
-          ...userCredential.user,
-          displayName: name,
-          email: email,
-        } as User);
-        showToast('success', `Signed in as ${name}`, 'You are now ready to register your speech topic.');
-      }
-    } catch (err: unknown) {
-      console.error('Student sign-in error:', err);
-      showToast('error', 'Sign In Failed', 'Could not complete sign-in. Please try again.');
-    }
-  };
-
-  const handleSignOut = async () => {
-    try {
-      await signOut(auth);
-      showToast('info', 'Signed Out', 'You have been signed out.');
-    } catch (err: unknown) {
-      console.error('Sign out error:', err);
-    }
-  };
-
-  // Does the signed-in user already have a registered topic?
+  // Topic registered by this device / student number
   const myRegisteredTopic = useMemo(() => {
-    if (!currentUser) return null;
-    return topics.find((t) => t.userId === currentUser.uid) || null;
-  }, [currentUser, topics]);
+    if (!savedStudentNumber) return null;
+    const norm = normalizeStudentNumber(savedStudentNumber);
+    return (
+      topics.find(
+        (t) =>
+          normalizeStudentNumber(t.studentNumber || t.userId || '') === norm
+      ) || null
+    );
+  }, [savedStudentNumber, topics]);
 
-  // Add modal trigger
+  // Open add modal
   const handleOpenAddModal = () => {
     if (myRegisteredTopic) {
-      // User already has a topic -> open their edit modal instead
       setSelectedEditTopic(myRegisteredTopic);
       setIsEditModalOpen(true);
       showToast(
         'info',
         'Existing Topic Found',
-        'You already have a topic registered. You can edit it here.'
+        `You have already registered "${myRegisteredTopic.topic}". You can modify it here.`
       );
       return;
     }
     setIsAddModalOpen(true);
   };
 
+  // Clear or switch student session on shared device
+  const handleClearSavedStudent = () => {
+    localStorage.removeItem(STORAGE_STUDENT_NUMBER_KEY);
+    localStorage.removeItem(STORAGE_STUDENT_NAME_KEY);
+    setSavedStudentNumber('');
+    setSavedStudentName('');
+    showToast('info', 'Student Session Cleared', 'You can now register for another student.');
+  };
+
   // Register topic submission
   const handleRegisterTopic = async (data: {
     studentName: string;
+    studentNumber: string;
     topic: string;
     section?: string;
   }) => {
-    if (!currentUser) {
-      throw new Error('Please sign in before registering a topic.');
-    }
+    await registerSpeechTopic(data);
 
-    await registerSpeechTopic({
-      userId: currentUser.uid,
-      studentName: data.studentName,
-      studentEmail: currentUser.email || '',
-      studentPhotoURL: currentUser.photoURL || undefined,
-      topic: data.topic,
-      section: data.section,
-    });
+    // Save student details to device storage
+    localStorage.setItem(STORAGE_STUDENT_NUMBER_KEY, data.studentNumber);
+    localStorage.setItem(STORAGE_STUDENT_NAME_KEY, data.studentName);
+    setSavedStudentNumber(data.studentNumber);
+    setSavedStudentName(data.studentName);
 
     showToast(
       'success',
       'Topic Registered Successfully',
-      `Your presentation topic "${data.topic}" is now officially claimed on the class board.`
+      `"${data.topic}" has been locked in for ${data.studentName}.`
     );
   };
 
@@ -224,28 +195,36 @@ export default function SpeakListPage() {
 
   // Save topic updates
   const handleSaveTopic = async (data: {
+    id: string;
     studentName: string;
+    studentNumber: string;
     topic: string;
     section?: string;
   }) => {
-    if (!currentUser || !selectedEditTopic) {
-      throw new Error('Authentication required.');
-    }
+    await updateSpeechTopic(data);
 
-    await updateSpeechTopic({
-      userId: currentUser.uid,
-      studentName: data.studentName,
-      topic: data.topic,
-      section: data.section,
-    });
+    // Keep device identity synced
+    localStorage.setItem(STORAGE_STUDENT_NUMBER_KEY, data.studentNumber);
+    localStorage.setItem(STORAGE_STUDENT_NAME_KEY, data.studentName);
+    setSavedStudentNumber(data.studentNumber);
+    setSavedStudentName(data.studentName);
 
-    showToast('success', 'Your topic has been updated', 'Your speech topic changes are now live.');
+    showToast('success', 'Topic Updated', 'Your speech topic changes are now live.');
   };
 
-  // Delete/withdraw topic
-  const handleDeleteTopic = async (topic: SpeechTopic) => {
-    if (!currentUser) return;
-    await deleteSpeechTopic(currentUser.uid);
+  // Delete / withdraw topic
+  const handleDeleteTopic = async (topic: SpeechTopic, verificationNumber?: string) => {
+    await deleteSpeechTopic(topic.id, verificationNumber || savedStudentNumber);
+
+    const normSaved = normalizeStudentNumber(savedStudentNumber);
+    const normDeleted = normalizeStudentNumber(topic.studentNumber || topic.userId || '');
+    if (normSaved === normDeleted) {
+      localStorage.removeItem(STORAGE_STUDENT_NUMBER_KEY);
+      localStorage.removeItem(STORAGE_STUDENT_NAME_KEY);
+      setSavedStudentNumber('');
+      setSavedStudentName('');
+    }
+
     showToast(
       'info',
       'Topic Withdrawn',
@@ -269,12 +248,13 @@ export default function SpeakListPage() {
   const filteredAndSortedTopics = useMemo(() => {
     let result = [...topics];
 
-    // 1. Search Query filter (matches student name, topic, or section)
+    // 1. Search Query filter (matches student name, student number, topic, or section)
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       result = result.filter(
         (item) =>
           item.studentName.toLowerCase().includes(q) ||
+          (item.studentNumber && item.studentNumber.toLowerCase().includes(q)) ||
           item.topic.toLowerCase().includes(q) ||
           (item.section && item.section.toLowerCase().includes(q))
       );
@@ -282,13 +262,16 @@ export default function SpeakListPage() {
 
     // 2. Tab Filter
     if (activeFilter === 'my') {
-      if (currentUser) {
-        result = result.filter((item) => item.userId === currentUser.uid);
+      if (savedStudentNumber) {
+        const norm = normalizeStudentNumber(savedStudentNumber);
+        result = result.filter(
+          (item) =>
+            normalizeStudentNumber(item.studentNumber || item.userId || '') === norm
+        );
       } else {
         result = [];
       }
     } else if (activeFilter === 'recent') {
-      // Recent: first 8 or within last 48 hours
       result = result.slice(0, 10);
     }
 
@@ -312,19 +295,21 @@ export default function SpeakListPage() {
     });
 
     return result;
-  }, [topics, searchQuery, activeFilter, activeSort, currentUser]);
+  }, [topics, searchQuery, activeFilter, activeSort, savedStudentNumber]);
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col font-sans transition-colors">
       {/* Header */}
       <Header
-        currentUser={currentUser}
         theme={theme}
         onToggleTheme={toggleTheme}
-        onSignInWithGoogle={handleSignInWithGoogle}
-        onQuickStudentSignIn={handleQuickStudentSignIn}
-        onSignOut={handleSignOut}
+        registeredStudentName={savedStudentName || (myRegisteredTopic ? myRegisteredTopic.studentName : undefined)}
+        registeredStudentNumber={savedStudentNumber || (myRegisteredTopic ? myRegisteredTopic.studentNumber : undefined)}
         onOpenAddModal={handleOpenAddModal}
+        onOpenEditMyTopic={() => {
+          if (myRegisteredTopic) handleOpenEditModal(myRegisteredTopic);
+        }}
+        onClearSavedStudent={savedStudentNumber ? handleClearSavedStudent : undefined}
         onOpenSetupGuide={() => setIsSetupGuideOpen(true)}
       />
 
@@ -357,7 +342,7 @@ export default function SpeakListPage() {
         <TopicBoard
           topics={filteredAndSortedTopics}
           loading={loading}
-          currentUserId={currentUser ? currentUser.uid : null}
+          currentStudentNumber={savedStudentNumber || null}
           onEditTopic={handleOpenEditModal}
           onDeleteTopic={handleDeleteTopic}
           onOpenAddModal={handleOpenAddModal}
@@ -375,12 +360,12 @@ export default function SpeakListPage() {
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsSetupGuideOpen(true)}
-              className="hover:text-indigo-600 dark:hover:text-indigo-400 transition underline underline-offset-2"
+              className="hover:text-indigo-600 dark:hover:text-indigo-400 transition underline underline-offset-2 cursor-pointer"
             >
-              Setup & Firebase Rules Guide
+              Setup & Rules Guide
             </button>
             <span className="text-zinc-300 dark:text-zinc-700">•</span>
-            <span>Real-time Sync Active</span>
+            <span>Real-time Live Sync</span>
           </div>
         </div>
       </footer>
@@ -389,9 +374,9 @@ export default function SpeakListPage() {
       <AddTopicModal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
-        currentUser={currentUser}
         existingTopics={topics}
-        onSignInRequired={handleSignInWithGoogle}
+        defaultStudentName={savedStudentName}
+        defaultStudentNumber={savedStudentNumber}
         onSubmitTopic={handleRegisterTopic}
       />
 
@@ -401,6 +386,7 @@ export default function SpeakListPage() {
         onClose={() => setIsEditModalOpen(false)}
         topic={selectedEditTopic}
         existingTopics={topics}
+        savedStudentNumber={savedStudentNumber}
         onSaveTopic={handleSaveTopic}
         onDeleteTopic={handleDeleteTopic}
       />

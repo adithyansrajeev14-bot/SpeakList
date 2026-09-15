@@ -1,10 +1,11 @@
 import { Timestamp } from 'firebase/firestore';
 
 export interface SpeechTopic {
-  id: string; // Document ID (usually equals the student's Firebase UID)
-  userId: string;
+  id: string; // Document ID (usually normalized student number or doc id)
+  userId?: string;
   studentName: string;
-  studentEmail: string;
+  studentNumber: string; // Phone number or Student Roll / Registration number
+  studentEmail?: string;
   studentPhotoURL?: string;
   topic: string;
   normalizedTopic: string;
@@ -32,6 +33,17 @@ export function normalizeTopic(topic: string): string {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, ' ');
+}
+
+/**
+ * Normalizes a student number / phone number for consistency.
+ * e.g., " +91 98765-43210 " -> "+919876543210", "CS-2024-001" -> "CS-2024-001"
+ */
+export function normalizeStudentNumber(numberStr: string): string {
+  return numberStr
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '');
 }
 
 /**

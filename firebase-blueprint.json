@@ -1,0 +1,91 @@
+{
+  "entities": {
+    "SpeechTopic": {
+      "title": "SpeechTopic",
+      "description": "A college student's speech presentation topic entry registered with name and student/phone number.",
+      "type": "object",
+      "properties": {
+        "studentName": {
+          "type": "string",
+          "description": "Full name of the student",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "studentNumber": {
+          "type": "string",
+          "description": "Student ID, roll number, or phone number",
+          "minLength": 1,
+          "maxLength": 50
+        },
+        "normalizedNumber": {
+          "type": "string",
+          "description": "Normalized student number for duplicate and ownership checking"
+        },
+        "topic": {
+          "type": "string",
+          "description": "Speech presentation topic text",
+          "minLength": 1,
+          "maxLength": 250
+        },
+        "normalizedTopic": {
+          "type": "string",
+          "description": "Normalized topic text for case-insensitive duplicate checking"
+        },
+        "section": {
+          "type": "string",
+          "description": "Optional class period or section identifier",
+          "maxLength": 50
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when topic was registered"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when topic was last edited"
+        }
+      },
+      "required": ["studentName", "studentNumber", "topic", "normalizedTopic"]
+    },
+    "TopicReservation": {
+      "title": "TopicReservation",
+      "description": "Atomic reservation record preventing duplicate speech topics across the class.",
+      "type": "object",
+      "properties": {
+        "studentName": {
+          "type": "string",
+          "description": "Full name of the student who claimed this topic"
+        },
+        "studentNumber": {
+          "type": "string",
+          "description": "Phone or student roll number"
+        },
+        "normalizedNumber": {
+          "type": "string",
+          "description": "Normalized student number"
+        },
+        "topic": {
+          "type": "string",
+          "description": "Presentation topic text"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["studentNumber", "studentName", "topic"]
+    }
+  },
+  "firestore": {
+    "/speechTopics/{docId}": {
+      "schema": "SpeechTopic",
+      "description": "Registered class speech topics sorted by creation time"
+    },
+    "/topicReservations/{normalizedTopic}": {
+      "schema": "TopicReservation",
+      "description": "Atomic unique locks on normalized topic titles"
+    }
+  }
+}

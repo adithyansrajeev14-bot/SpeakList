@@ -28,7 +28,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
           <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
           <span>Speech Presentation Registration</span>
           <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-600" />
-          <span className="text-indigo-600 dark:text-indigo-400 font-semibold">Strict Duplicate Check</span>
+          <span className="text-indigo-600 dark:text-indigo-400 font-semibold">Enter Name & Number</span>
         </div>
 
         {/* Main Heading */}
@@ -52,20 +52,20 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
           <button
             id="hero-add-topic-btn"
             onClick={onOpenAddModal}
-            className="inline-flex items-center gap-2.5 px-6 py-3.5 rounded-xl text-base font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-98 shadow-md hover:shadow-lg shadow-indigo-600/20 transition-all duration-200"
+            className="inline-flex items-center gap-2.5 px-6 py-3.5 rounded-xl text-base font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-98 shadow-md hover:shadow-lg shadow-indigo-600/20 transition-all duration-200 cursor-pointer"
           >
             <Plus className="w-5 h-5 stroke-[2.5]" />
-            + Add Your Topic
+            <span>+ Add Your Topic</span>
           </button>
 
           {hasUserRegistered && (
             <button
               id="hero-view-my-topic-btn"
               onClick={onScrollToMyTopic}
-              className="inline-flex items-center gap-2 px-5 py-3.5 rounded-xl text-sm font-medium text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-800/80 hover:bg-zinc-50 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-xs transition"
+              className="inline-flex items-center gap-2 px-5 py-3.5 rounded-xl text-sm font-medium text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-800/80 hover:bg-zinc-50 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-xs transition cursor-pointer"
             >
               <ShieldCheck className="w-4 h-4 text-emerald-500" />
-              View / Edit My Topic
+              <span>View / Edit My Topic</span>
             </button>
           )}
         </div>
@@ -78,7 +78,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
           </div>
           <div className="flex items-center justify-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Owner Protected</span>
+            <span>Protected by Number</span>
           </div>
           <div className="flex items-center justify-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-indigo-500" />

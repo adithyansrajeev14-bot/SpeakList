@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { SpeechTopic, getInitials, formatTopicDate } from '@/lib/types';
-import { Edit3, CheckCircle, Calendar, User, Trash2 } from 'lucide-react';
+import { Edit3, CheckCircle, Calendar, User, Trash2, Hash } from 'lucide-react';
 
 interface TopicRowProps {
   topic: SpeechTopic;
@@ -12,7 +12,6 @@ interface TopicRowProps {
   index: number;
 }
 
-// Consistent background color palette for student avatar circles
 const AVATAR_COLORS = [
   'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300',
   'bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300',
@@ -30,7 +29,9 @@ export const TopicRow: React.FC<TopicRowProps> = ({
   onDelete,
   index,
 }) => {
-  const colorIndex = Math.abs(topic.studentName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % AVATAR_COLORS.length;
+  const colorIndex =
+    Math.abs(topic.studentName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) %
+    AVATAR_COLORS.length;
   const avatarColorClass = AVATAR_COLORS[colorIndex];
 
   return (
@@ -44,28 +45,16 @@ export const TopicRow: React.FC<TopicRowProps> = ({
           : 'bg-zinc-50/60 dark:bg-zinc-900/40 border-zinc-200/60 dark:border-zinc-800/60'
       } hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow-sm`}
     >
-      {/* 2-Column Responsive Layout:
-          Desktop: Grid with 2 columns (Column 1: Student Name, Column 2: Speech Topic)
-          Mobile: Stacked card preserving rich typography and no horizontal scroll */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-6 p-4 sm:p-5 items-center">
-        {/* COLUMN 1: STUDENT NAME (Left column, 5 cols on md) */}
+        {/* COLUMN 1: STUDENT NAME & NUMBER (Left column, 5 cols on md) */}
         <div className="md:col-span-5 flex items-center gap-3.5 min-w-0">
-          {/* Avatar / Initials */}
+          {/* Avatar circle */}
           <div className="shrink-0 relative">
-            {topic.studentPhotoURL ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={topic.studentPhotoURL}
-                alt={topic.studentName}
-                className="w-10 h-10 rounded-full object-cover ring-2 ring-white dark:ring-zinc-800 shadow-xs"
-              />
-            ) : (
-              <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs ring-2 ring-white dark:ring-zinc-800 ${avatarColorClass}`}
-              >
-                {getInitials(topic.studentName)}
-              </div>
-            )}
+            <div
+              className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs ring-2 ring-white dark:ring-zinc-800 ${avatarColorClass}`}
+            >
+              {getInitials(topic.studentName)}
+            </div>
             {isOwner && (
               <span
                 title="Your Registration"
@@ -99,9 +88,18 @@ export const TopicRow: React.FC<TopicRowProps> = ({
               )}
             </div>
 
-            <div className="flex items-center gap-1.5 text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
-              <Calendar className="w-3 h-3" />
-              <span>{formatTopicDate(topic.createdAt)}</span>
+            {/* Student ID / Phone Number & Timestamp */}
+            <div className="flex items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400 mt-1 flex-wrap">
+              {topic.studentNumber && (
+                <span className="inline-flex items-center gap-1 font-mono text-[11px] text-zinc-600 dark:text-zinc-300">
+                  <Hash className="w-3 h-3 text-zinc-400" />
+                  <span>{topic.studentNumber}</span>
+                </span>
+              )}
+              <div className="flex items-center gap-1 text-[11px] text-zinc-400 dark:text-zinc-500">
+                <Calendar className="w-3 h-3" />
+                <span>{formatTopicDate(topic.createdAt)}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -133,32 +131,35 @@ export const TopicRow: React.FC<TopicRowProps> = ({
               <span className="hidden sm:inline">Claimed</span>
             </span>
 
-            {/* Owner controls: Edit and Delete buttons ONLY shown if row belongs to current user */}
-            {isOwner && (
-              <div className="flex items-center gap-1 ml-1">
-                <button
-                  id={`edit-topic-btn-${topic.id}`}
-                  onClick={() => onEdit(topic)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 transition active:scale-95 shadow-2xs"
-                  aria-label="Edit your speech topic"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>Edit</span>
-                </button>
+            {/* Action buttons: if owner, shows direct edit; if other student, can click Edit to verify number */}
+            <div className="flex items-center gap-1 ml-1">
+              <button
+                id={`edit-topic-btn-${topic.id}`}
+                onClick={() => onEdit(topic)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition active:scale-95 shadow-2xs ${
+                  isOwner
+                    ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800'
+                    : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-transparent hover:border-zinc-200 dark:hover:border-zinc-700'
+                }`}
+                title={isOwner ? 'Edit your speech topic' : 'Edit your topic (requires student number)'}
+                aria-label={isOwner ? 'Edit your speech topic' : 'Edit topic'}
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Edit</span>
+              </button>
 
-                {onDelete && (
-                  <button
-                    id={`delete-topic-btn-${topic.id}`}
-                    onClick={() => onDelete(topic)}
-                    title="Withdraw topic"
-                    className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-                    aria-label="Withdraw your speech topic"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            )}
+              {isOwner && onDelete && (
+                <button
+                  id={`delete-topic-btn-${topic.id}`}
+                  onClick={() => onDelete(topic)}
+                  title="Withdraw topic"
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                  aria-label="Withdraw your speech topic"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
